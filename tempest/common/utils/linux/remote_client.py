@@ -29,7 +29,8 @@ LOG = logging.getLogger(__name__)
 class RemoteClient(object):
 
     # NOTE(afazekas): It should always get an address instead of server
-    def __init__(self, server, username, password=None, pkey=None):
+    def __init__(self, server, username, password=None, pkey=None,
+                                                key_filename=None):
         ssh_timeout = CONF.validation.ssh_timeout
         network = CONF.compute.network_for_ssh
         ip_version = CONF.validation.ip_version_for_ssh
@@ -44,8 +45,12 @@ class RemoteClient(object):
                     break
             else:
                 raise exceptions.ServerUnreachable()
-        self.ssh_client = ssh.Client(ip_address, username, password,
-                                     ssh_timeout, pkey=pkey,
+        if CONF.compute.ssh_auth_method == 'keypair' and pkey == None:
+            key_filename = CONF.compute.path_to_private_key if \
+                CONF.compute.path_to_private_key else None
+        self.ssh_client = ssh.Client(ip_address, username, password=None,
+                                     timeout=ssh_timeout, pkey=pkey,
+                                     key_filename=key_filename,
                                      channel_timeout=connect_timeout)
 
     def exec_command(self, cmd):
@@ -106,8 +111,7 @@ class RemoteClient(object):
 
     def get_nic_name(self, address):
         cmd = "ip -o addr | awk '/%s/ {print $2}'" % address
-        nic = self.exec_command(cmd)
-        return nic.strip().strip(":").lower()
+        return self.exec_command(cmd)
 
     def get_ip_list(self):
         cmd = "ip address"
@@ -145,6 +149,7 @@ class RemoteClient(object):
         """Renews DHCP lease via udhcpc client. """
         file_path = '/var/run/udhcpc.'
         nic_name = self.get_nic_name(fixed_ip)
+        nic_name = nic_name.strip().lower()
         pid = self.exec_command('cat {path}{nic}.pid'.
                                 format(path=file_path, nic=nic_name))
         pid = pid.strip()

@@ -46,30 +46,6 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
         super(AttachInterfacesTestJSON, cls).setup_clients()
         cls.client = cls.os.interfaces_client
 
-    def wait_for_interface_status(self, server, port_id, status):
-        """Waits for a interface to reach a given status."""
-        body = (self.client.show_interface(server, port_id)
-                ['interfaceAttachment'])
-        interface_status = body['port_state']
-        start = int(time.time())
-
-        while(interface_status != status):
-            time.sleep(self.build_interval)
-            body = (self.client.show_interface(server, port_id)
-                    ['interfaceAttachment'])
-            interface_status = body['port_state']
-
-            timed_out = int(time.time()) - start >= self.build_timeout
-
-            if interface_status != status and timed_out:
-                message = ('Interface %s failed to reach %s status '
-                           '(current %s) within the required time (%s s).' %
-                           (port_id, status, interface_status,
-                            self.build_timeout))
-                raise exceptions.TimeoutException(message)
-
-        return body
-
     def _check_interface(self, iface, port_id=None, network_id=None,
                          fixed_ip=None, mac_addr=None):
         self.assertIn('port_state', iface)
@@ -84,26 +60,26 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
 
     def _create_server_get_interfaces(self):
         server = self.create_test_server(wait_until='ACTIVE')
-        ifs = (self.client.list_interfaces(server['id'])
-               ['interfaceAttachments'])
-        body = self.wait_for_interface_status(
+        ifs = self.client.list_interfaces(server['id'])
+        body = self.client.wait_for_interface_status(
             server['id'], ifs[0]['port_id'], 'ACTIVE')
         ifs[0]['port_state'] = body['port_state']
         return server, ifs
 
     def _test_create_interface(self, server):
-        iface = (self.client.create_interface(server['id'])
-                 ['interfaceAttachment'])
-        iface = self.wait_for_interface_status(
+        network = self.get_tenant_network()
+        net_id = network['id'] if 'id' in network.keys() else None
+        iface = self.client.create_interface(server['id'], network_id=net_id)
+        iface = self.client.wait_for_interface_status(
             server['id'], iface['port_id'], 'ACTIVE')
         self._check_interface(iface)
         return iface
 
     def _test_create_interface_by_network_id(self, server, ifs):
         network_id = ifs[0]['net_id']
-        iface = self.client.create_interface(
-            server['id'], net_id=network_id)['interfaceAttachment']
-        iface = self.wait_for_interface_status(
+        iface = self.client.create_interface(server['id'],
+                                             network_id=network_id)
+        iface = self.client.wait_for_interface_status(
             server['id'], iface['port_id'], 'ACTIVE')
         self._check_interface(iface, network_id=network_id)
         return iface
@@ -186,7 +162,10 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
         self.assertTrue(interface_count > 0)
         self._check_interface(ifs[0])
         network_id = ifs[0]['net_id']
-        self.servers_client.add_fixed_ip(server['id'], networkId=network_id)
+        port = self.client.add_fixed_ip(server['id'], network_id)
+        for port in self.client.list_interfaces(server['id']):
+            self.client.wait_for_interface_status(server['id'], port['port_id'],
+                         "ACTIVE")
         # Remove the fixed IP from server.
         server_detail = self.os.servers_client.show_server(
             server['id'])['server']
@@ -199,4 +178,4 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
                     break
             if fixed_ip is not None:
                 break
-        self.servers_client.remove_fixed_ip(server['id'], address=fixed_ip)
+        self.client.remove_fixed_ip(server['id'], fixed_ip)

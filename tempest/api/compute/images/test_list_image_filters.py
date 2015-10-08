@@ -17,11 +17,11 @@ import time
 
 from oslo_log import log as logging
 import six
+from tempest_lib.common.utils import data_utils
+from tempest_lib import decorators
 import testtools
 
 from tempest.api.compute import base
-from tempest.common.utils import data_utils
-from tempest.common import waiters
 from tempest import config
 from tempest import test
 
@@ -62,8 +62,8 @@ class ListImageFiltersTestJSON(base.BaseV2ComputeTest):
             time.sleep(1)
             image_file = six.StringIO(('*' * 1024))
             cls.glance_client.update_image(image_id, data=image_file)
-            waiters.wait_for_image_status(cls.client, image_id, 'ACTIVE')
-            body = cls.client.show_image(image_id)['image']
+            cls.client.wait_for_image_status(image_id, 'ACTIVE')
+            body = cls.client.show_image(image_id)
             return body
 
         # Create non-snapshot images via glance
@@ -81,8 +81,8 @@ class ListImageFiltersTestJSON(base.BaseV2ComputeTest):
         cls.server1 = cls.create_test_server()
         cls.server2 = cls.create_test_server(wait_until='ACTIVE')
         # NOTE(sdague) this is faster than doing the sync wait_util on both
-        waiters.wait_for_server_status(cls.servers_client,
-                                       cls.server1['id'], 'ACTIVE')
+        cls.servers_client.wait_for_server_status(cls.server1['id'],
+                                                  'ACTIVE')
 
         # Create images to be used in the filter tests
         cls.snapshot1 = cls.create_image_from_server(
@@ -123,6 +123,7 @@ class ListImageFiltersTestJSON(base.BaseV2ComputeTest):
         self.assertFalse(any([i for i in images if i['id'] == self.image2_id]))
         self.assertFalse(any([i for i in images if i['id'] == self.image3_id]))
 
+    @decorators.skip_because(bug="1461483")
     @test.idempotent_id('9f238683-c763-45aa-b848-232ec3ce3105')
     @testtools.skipUnless(CONF.compute_feature_enabled.snapshot,
                           'Snapshotting is not available.')
@@ -140,6 +141,7 @@ class ListImageFiltersTestJSON(base.BaseV2ComputeTest):
         self.assertFalse(any([i for i in images
                               if i['id'] == self.snapshot3_id]))
 
+    @decorators.skip_because(bug="1461483")
     @test.idempotent_id('05a377b8-28cf-4734-a1e6-2ab5c38bf606')
     @testtools.skipUnless(CONF.compute_feature_enabled.snapshot,
                           'Snapshotting is not available.')
@@ -159,6 +161,7 @@ class ListImageFiltersTestJSON(base.BaseV2ComputeTest):
             self.assertTrue(any([i for i in images
                                  if i['id'] == self.snapshot3_id]))
 
+    @decorators.skip_because(bug="1461483")
     @test.idempotent_id('e3356918-4d3e-4756-81d5-abc4524ba29f')
     @testtools.skipUnless(CONF.compute_feature_enabled.snapshot,
                           'Snapshotting is not available.')
@@ -224,6 +227,7 @@ class ListImageFiltersTestJSON(base.BaseV2ComputeTest):
         images = self.client.list_images(detail=True, **params)['images']
         self.assertEqual(1, len(images))
 
+    @decorators.skip_because(bug="1461483")
     @test.idempotent_id('8c78f822-203b-4bf6-8bba-56ebd551cf84')
     @testtools.skipUnless(CONF.compute_feature_enabled.snapshot,
                           'Snapshotting is not available.')
@@ -243,6 +247,7 @@ class ListImageFiltersTestJSON(base.BaseV2ComputeTest):
             self.assertTrue(any([i for i in images
                                  if i['id'] == self.snapshot3_id]))
 
+    @decorators.skip_because(bug="1461483")
     @test.idempotent_id('888c0cc0-7223-43c5-9db0-b125fd0a393b')
     @testtools.skipUnless(CONF.compute_feature_enabled.snapshot,
                           'Snapshotting is not available.')

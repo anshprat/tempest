@@ -40,8 +40,6 @@ class TestServerBasicOps(manager.ScenarioTest):
      * Add simple permissive rules to the security group
      * Launch an instance
      * Perform ssh to instance
-     * Verify metadata service
-     * Verify metadata on config_drive
      * Terminate the instance
     """
 
@@ -89,57 +87,18 @@ class TestServerBasicOps(manager.ScenarioTest):
     def verify_ssh(self):
         if self.run_ssh:
             # Obtain a floating IP
-            self.floating_ip = (self.floating_ips_client.create_floating_ip()
-                                ['floating_ip'])
+            floating_ip = self.floating_ips_client.create_floating_ip()
             self.addCleanup(self.delete_wrapper,
                             self.floating_ips_client.delete_floating_ip,
-                            self.floating_ip['id'])
+                            floating_ip['id'])
             # Attach a floating IP
             self.floating_ips_client.associate_floating_ip_to_server(
-                self.floating_ip['ip'], self.instance['id'])
+                floating_ip['ip'], self.instance['id'])
             # Check ssh
-            self.ssh_client = self.get_remote_client(
-                server_or_ip=self.floating_ip['ip'],
+            self.get_remote_client(
+                server_or_ip=floating_ip['ip'],
                 username=self.image_utils.ssh_user(self.image_ref),
                 private_key=self.keypair['private_key'])
-
-    def verify_metadata(self):
-        if self.run_ssh and CONF.compute_feature_enabled.metadata_service:
-            # Verify metadata service
-            md_url = 'http://169.254.169.254/latest/meta-data/public-ipv4'
-
-            def exec_cmd_and_verify_output():
-                cmd = 'curl ' + md_url
-                floating_ip = self.floating_ip['ip']
-                result = self.ssh_client.exec_command(cmd)
-                if result:
-                    msg = ('Failed while verifying metadata on server. Result '
-                           'of command "%s" is NOT "%s".' % (cmd, floating_ip))
-                    self.assertEqual(floating_ip, result, msg)
-                    return 'Verification is successful!'
-
-            if not test.call_until_true(exec_cmd_and_verify_output,
-                                        CONF.compute.build_timeout,
-                                        CONF.compute.build_interval):
-                raise exceptions.TimeoutException('Timed out while waiting to '
-                                                  'verify metadata on server. '
-                                                  '%s is empty.' % md_url)
-
-    def verify_metadata_on_config_drive(self):
-        if self.run_ssh and CONF.compute_feature_enabled.config_drive:
-            # Verify metadata on config_drive
-            cmd_blkid = 'blkid -t LABEL=config-2 -o device'
-            dev_name = self.ssh_client.exec_command(cmd_blkid)
-            dev_name = dev_name.rstrip()
-            self.ssh_client.exec_command('sudo mount %s /mnt' % dev_name)
-            cmd_md = 'sudo cat /mnt/openstack/latest/meta_data.json'
-            result = self.ssh_client.exec_command(cmd_md)
-            self.ssh_client.exec_command('sudo umount /mnt')
-            result = json.loads(result)
-            self.assertIn('meta', result)
-            msg = ('Failed while verifying metadata on config_drive on server.'
-                   ' Result of command "%s" is NOT "%s".' % (cmd_md, self.md))
-            self.assertEqual(self.md, result['meta'], msg)
 
     @test.idempotent_id('7fff3fb3-91d8-4fd0-bd7d-0204f1f180ba')
     @test.attr(type='smoke')
@@ -149,6 +108,4 @@ class TestServerBasicOps(manager.ScenarioTest):
         self.security_group = self._create_security_group()
         self.boot_instance()
         self.verify_ssh()
-        self.verify_metadata()
-        self.verify_metadata_on_config_drive()
         self.servers_client.delete_server(self.instance['id'])

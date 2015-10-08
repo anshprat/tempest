@@ -16,7 +16,6 @@
 from oslo_log import log as logging
 
 from tempest.common import custom_matchers
-from tempest.common import waiters
 from tempest import config
 from tempest import exceptions
 from tempest.scenario import manager
@@ -44,16 +43,14 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
         server_id = self.server['id']
         # Raise on error defaults to True, which is consistent with the
         # original function from scenario tests here
-        waiters.wait_for_server_status(self.servers_client,
-                                       server_id, status)
+        self.servers_client.wait_for_server_status(server_id, status)
 
     def nova_keypair_add(self):
         self.keypair = self.create_keypair()
 
     def nova_boot(self):
         create_kwargs = {'key_name': self.keypair['name']}
-        self.server = self.create_server(image=self.image,
-                                         create_kwargs=create_kwargs)
+        self.server = self.create_server(create_kwargs=create_kwargs)
 
     def nova_list(self):
         servers = self.servers_client.list_servers()
@@ -82,6 +79,15 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
         volume = self.volumes_client.show_volume(self.volume['id'])['volume']
         self.assertEqual(self.volume, volume)
 
+    def nova_volume_attach(self):
+        volume_device_path = '/dev/' + CONF.compute.volume_device_name
+        volume = self.servers_client.attach_volume(
+            self.server['id'], self.volume['id'], volume_device_path)
+        self.assertEqual(self.volume['id'], volume['id'])
+        self.volumes_client.wait_for_volume_status(volume['id'], 'in-use')
+        # Refresh the volume after the attachment
+        self.volume = self.volumes_client.show_volume(volume['id'])
+
     def nova_reboot(self):
         self.servers_client.reboot_server(self.server['id'], 'SOFT')
         self._wait_for_server_status('ACTIVE')
@@ -90,6 +96,14 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
         # NOTE(andreaf) The device name may be different on different guest OS
         partitions = self.linux_client.get_partitions()
         self.assertEqual(1, partitions.count(CONF.compute.volume_device_name))
+
+    def nova_volume_detach(self):
+        self.servers_client.detach_volume(self.server['id'], self.volume['id'])
+        self.volumes_client.wait_for_volume_status(self.volume['id'],
+                                                   'available')
+
+        volume = self.volumes_client.show_volume(self.volume['id'])
+        self.assertEqual('available', volume['status'])
 
     def create_and_add_security_group(self):
         secgroup = self._create_security_group()
@@ -113,7 +127,8 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
     @test.idempotent_id('bdbb5441-9204-419d-a225-b4fdbfb1a1a8')
     @test.services('compute', 'volume', 'image', 'network')
     def test_minimum_basic_scenario(self):
-        self.glance_image_create()
+        # The below step is disabled as booting from image is not permitted
+        #self.glance_image_create()
         self.nova_keypair_add()
         self.nova_boot()
         self.nova_list()

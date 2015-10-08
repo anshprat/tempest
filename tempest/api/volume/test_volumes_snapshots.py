@@ -11,9 +11,9 @@
 #    under the License.
 
 from oslo_log import log as logging
+from tempest_lib.common.utils import data_utils
 
 from tempest.api.volume import base
-from tempest.common.utils import data_utils
 from tempest import config
 from tempest import test
 
@@ -71,6 +71,7 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
             name=server_name,
             wait_until='ACTIVE')
         self.addCleanup(self.servers_client.delete_server, server['id'])
+        self.servers_client.wait_for_server_status(server['id'], 'ACTIVE')
         mountpoint = '/dev/%s' % CONF.compute.volume_device_name
         self.servers_client.attach_volume(
             server['id'], volumeId=self.volume_origin['id'],

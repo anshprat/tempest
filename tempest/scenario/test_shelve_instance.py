@@ -16,7 +16,6 @@
 from oslo_log import log
 import testtools
 
-from tempest.common import waiters
 from tempest import config
 from tempest.scenario import manager
 from tempest import test
@@ -41,18 +40,15 @@ class TestShelveInstance(manager.ScenarioTest):
         self.servers_client.shelve_server(server['id'])
         offload_time = CONF.compute.shelved_offload_time
         if offload_time >= 0:
-            waiters.wait_for_server_status(self.servers_client, server['id'],
-                                           'SHELVED_OFFLOADED',
-                                           extra_timeout=offload_time)
+            self.servers_client.wait_for_server_status(
+                server['id'], 'SHELVED_OFFLOADED', extra_timeout=offload_time)
         else:
-            waiters.wait_for_server_status(self.servers_client,
-                                           server['id'], 'SHELVED')
+            self.servers_client.wait_for_server_status(server['id'], 'SHELVED')
             self.servers_client.shelve_offload_server(server['id'])
-            waiters.wait_for_server_status(self.servers_client, server['id'],
-                                           'SHELVED_OFFLOADED')
+            self.servers_client.wait_for_server_status(server['id'],
+                                                       'SHELVED_OFFLOADED')
         self.servers_client.unshelve_server(server['id'])
-        waiters.wait_for_server_status(self.servers_client, server['id'],
-                                       'ACTIVE')
+        self.servers_client.wait_for_server_status(server['id'], 'ACTIVE')
 
     def _create_server_then_shelve_and_unshelve(self, boot_from_volume=False):
         self.keypair = self.create_keypair()

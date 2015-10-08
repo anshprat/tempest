@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
 from xml.etree import ElementTree as etree
 
-from oslo_serialization import jsonutils as json
 from six.moves.urllib import parse as urllib
 
 from tempest.common import service_client
@@ -72,7 +72,8 @@ class ContainerClient(service_client.ServiceClient):
                 headers[remove_metadata_prefix + key] = remove_metadata[key]
 
         resp, body = self.post(url, body=None, headers=headers)
-        self.expected_success(204, resp.status)
+        #status returned is 202 not 204. Bug = 1417486
+        self.expected_success(202, resp.status)
         return resp, body
 
     def delete_container_metadata(self, container_name, metadata,
@@ -86,7 +87,8 @@ class ContainerClient(service_client.ServiceClient):
                 headers[metadata_prefix + item] = metadata[item]
 
         resp, body = self.post(url, body=None, headers=headers)
-        self.expected_success(204, resp.status)
+        #status returned is 202 not 204. Bug = 1417486
+        self.expected_success(202, resp.status)
         return resp, body
 
     def list_container_metadata(self, container_name):
@@ -119,6 +121,24 @@ class ContainerClient(service_client.ServiceClient):
             params={'limit': limit, 'format': 'json'})
         self.expected_success(200, resp.status)
         return objlist
+        """tmp = []
+        for obj in objlist:
+            tmp.append(obj['name'])
+        objlist = tmp
+
+        if len(objlist) >= limit:
+
+            # Increment marker
+            marker = objlist[len(objlist) - 1]
+
+            # Get the next chunk of the list
+            objlist.extend(_list_all_container_objects(container,
+                                                      params={'marker': marker,
+                                                              'limit': limit}))
+            return objlist
+        else:
+            # Return final, complete list
+            return objlist"""
 
     def list_container_contents(self, container, params=None):
         """

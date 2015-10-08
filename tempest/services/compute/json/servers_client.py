@@ -14,14 +14,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import copy
+import json
+import time
+import base64
 
-from oslo_serialization import jsonutils as json
 from six.moves.urllib import parse as urllib
 
+from tempest.services.volume.json import boot_from_vol_client
 from tempest.api_schema.response.compute.v2_1 import servers as schema
 from tempest.common import service_client
+from tempest.common import waiters
+from tempest import exceptions
+from tempest import config
 
+CONF = config.CONF
 
 class ServersClient(service_client.ServiceClient):
 
@@ -30,6 +36,7 @@ class ServersClient(service_client.ServiceClient):
         super(ServersClient, self).__init__(
             auth_provider, service, region, **kwargs)
         self.enable_instance_password = enable_instance_password
+        self.bfv_cleanup = boot_from_vol_client.get_cleanBFV_obj(auth_provider)
 
     def create_server(self, **kwargs):
         """
@@ -40,17 +47,45 @@ class ServersClient(service_client.ServiceClient):
         :param scheduler_hints: The name is changed to os:scheduler_hints and
         the parameter is set in the same level as the parameter 'server'.
         """
-        body = copy.deepcopy(kwargs)
-        if body.get('disk_config'):
-            body['OS-DCF:diskConfig'] = body.pop('disk_config')
+        post_body = {
+            'name': name,
+            'imageRef': image_ref,
+            'flavorRef': flavor_ref
+        }
 
-        hints = None
-        if body.get('scheduler_hints'):
-            hints = {'os:scheduler_hints': body.pop('scheduler_hints')}
+        if CONF.compute_feature_enabled.boot_from_volume_only:
+            kwargs = boot_from_vol_client.set_block_device_mapping_args(
+                     image_ref, kwargs)
+        if CONF.compute.env_type == "gate" and "user_data" not in kwargs:
+            user_data = "#!/bin/sh\n"\
+                        "sudo ifconfig eth0 mtu %s" % CONF.compute.mtu_size
+            user_data_base64 = base64.b64encode(user_data).decode('utf-8')
+            kwargs['user_data'] = user_data_base64
+        if 'key_name' not in kwargs and CONF.validation.run_validation and \
+            CONF.compute.ssh_auth_method == 'keypair' and CONF.compute.keypair_name:
+            kwargs['key_name'] = CONF.compute.keypair_name
 
-        post_body = {'server': body}
+        for option in ['personality', 'adminPass', 'key_name',
+                       'security_groups', 'networks', 'user_data',
+                       'availability_zone', 'accessIPv4', 'accessIPv6',
+                       'min_count', 'max_count', ('metadata', 'meta'),
+                       ('OS-DCF:diskConfig', 'disk_config'),
+                       'return_reservation_id', 'block_device_mapping',
+                       'block_device_mapping_v2']:
+            if isinstance(option, tuple):
+                post_param = option[0]
+                key = option[1]
+            else:
+                post_param = option
+                key = option
+            value = kwargs.get(key)
+            if value is not None:
+                post_body[post_param] = value
 
-        if hints:
+        post_body = {'server': post_body}
+
+        if 'sched_hints' in kwargs:
+            hints = {'os:scheduler_hints': kwargs.get('sched_hints')}
             post_body = dict(post_body.items() + hints.items())
 
         post_body = json.dumps(post_body)
@@ -92,26 +127,65 @@ class ServersClient(service_client.ServiceClient):
 
     def delete_server(self, server_id):
         """Deletes the given server."""
+        server = self.show_server(server_id)
         resp, body = self.delete("servers/%s" % server_id)
         self.validate_response(schema.delete_server, resp, body)
+        if CONF.compute_feature_enabled.boot_from_volume_only:
+            self.wait_for_server_termination(server_id, True)
+            if server['os-extended-volumes:volumes_attached']:
+                self.bfv_cleanup.clean_bfv_resource([server[
+                  'os-extended-volumes:volumes_attached'][0]['id']])
         return service_client.ResponseBody(resp, body)
 
-    def list_servers(self, detail=False, **params):
+    def list_servers(self, params=None):
         """Lists all servers for a user."""
 
         url = 'servers'
-        _schema = schema.list_servers
-
-        if detail:
-            url += '/detail'
-            _schema = schema.list_servers_detail
         if params:
             url += '?%s' % urllib.urlencode(params)
 
         resp, body = self.get(url)
         body = json.loads(body)
-        self.validate_response(_schema, resp, body)
+        self.validate_response(schema.list_servers, resp, body)
         return service_client.ResponseBody(resp, body)
+
+    def list_servers_with_detail(self, params=None):
+        """Lists all servers in detail for a user."""
+
+        url = 'servers/detail'
+        if params:
+            url += '?%s' % urllib.urlencode(params)
+
+        resp, body = self.get(url)
+        body = json.loads(body)
+        self.validate_response(schema.list_servers_detail, resp, body)
+        return service_client.ResponseBody(resp, body)
+
+    def wait_for_server_status(self, server_id, status, extra_timeout=0,
+                               raise_on_error=True, ready_wait=True):
+        """Waits for a server to reach a given status."""
+        return waiters.wait_for_server_status(self, server_id, status,
+                                              extra_timeout=extra_timeout,
+                                              raise_on_error=raise_on_error,
+                                              ready_wait=ready_wait)
+
+    def wait_for_server_termination(self, server_id, ignore_error=False):
+        """Waits for server to reach termination."""
+        start_time = int(time.time())
+        while True:
+            try:
+                body = self.show_server(server_id)
+            except lib_exc.NotFound:
+                return
+
+            server_status = body['status']
+            if server_status == 'ERROR' and not ignore_error:
+                raise exceptions.BuildErrorException(server_id=server_id)
+
+            if int(time.time()) - start_time >= self.build_timeout:
+                raise exceptions.TimeoutException
+
+            time.sleep(self.build_interval)
 
     def list_addresses(self, server_id):
         """Lists all addresses for a server."""
@@ -181,6 +255,9 @@ class ServersClient(service_client.ServiceClient):
         :param disk_config: The name is changed to OS-DCF:diskConfig
         """
         kwargs['imageRef'] = image_ref
+        if 'key_name' not in kwargs and CONF.validation.run_validation and \
+            CONF.compute.ssh_auth_method == 'keypair' and CONF.compute.keypair_name:
+            kwargs['key_name'] = CONF.compute.keypair_name
         if 'disk_config' in kwargs:
             kwargs['OS-DCF:diskConfig'] = kwargs.pop('disk_config')
         if self.enable_instance_password:
@@ -429,10 +506,40 @@ class ServersClient(service_client.ServiceClient):
                            schema.get_vnc_console,
                            type=console_type)
 
-    def add_fixed_ip(self, server_id, **kwargs):
-        """Add a fixed IP to input server instance."""
-        return self.action(server_id, 'addFixedIp', **kwargs)
+    def create_server_group(self, name, policies):
+        """
+        Create the server group
+        name : Name of the server-group
+        policies : List of the policies - affinity/anti-affinity)
+        """
+        post_body = {
+            'name': name,
+            'policies': policies,
+        }
 
-    def remove_fixed_ip(self, server_id, **kwargs):
-        """Remove input fixed IP from input server instance."""
-        return self.action(server_id, 'removeFixedIp', **kwargs)
+        post_body = json.dumps({'server_group': post_body})
+        resp, body = self.post('os-server-groups', post_body)
+
+        body = json.loads(body)
+        self.validate_response(schema.create_get_server_group, resp, body)
+        return service_client.ResponseBody(resp, body['server_group'])
+
+    def delete_server_group(self, server_group_id):
+        """Delete the given server-group."""
+        resp, body = self.delete("os-server-groups/%s" % server_group_id)
+        self.validate_response(schema.delete_server_group, resp, body)
+        return service_client.ResponseBody(resp, body)
+
+    def list_server_groups(self):
+        """List the server-groups."""
+        resp, body = self.get("os-server-groups")
+        body = json.loads(body)
+        self.validate_response(schema.list_server_groups, resp, body)
+        return service_client.ResponseBodyList(resp, body['server_groups'])
+
+    def get_server_group(self, server_group_id):
+        """Get the details of given server_group."""
+        resp, body = self.get("os-server-groups/%s" % server_group_id)
+        body = json.loads(body)
+        self.validate_response(schema.create_get_server_group, resp, body)
+        return service_client.ResponseBody(resp, body['server_group'])

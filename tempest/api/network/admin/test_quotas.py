@@ -14,9 +14,9 @@
 #    under the License.
 
 import six
+from tempest_lib.common.utils import data_utils
 
 from tempest.api.network import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
@@ -59,9 +59,9 @@ class QuotasTest(base.BaseAdminNetworkTest):
         self.addCleanup(self.identity_utils.delete_project, project_id)
 
         # Change quotas for tenant
-        quota_set = self.admin_client.update_quotas(project_id,
-                                                    **new_quotas)['quota']
-        self.addCleanup(self.admin_client.reset_quotas, project_id)
+        quota_set = self.admin_client.update_quotas(tenant_id,
+                                                    **new_quotas)
+        self.addCleanup(self.admin_client.reset_quotas, tenant_id)
         for key, value in six.iteritems(new_quotas):
             self.assertEqual(value, quota_set[key])
 

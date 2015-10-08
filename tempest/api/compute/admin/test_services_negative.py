@@ -40,9 +40,9 @@ class ServicesAdminNegativeTestJSON(base.BaseV2ComputeAdminTest):
     @test.idempotent_id('d0884a69-f693-4e79-a9af-232d15643bf7')
     def test_get_service_by_invalid_params(self):
         # return all services if send the request with invalid parameter
-        services = self.client.list_services()['services']
-        services_xxx = (self.client.list_services(xxx='nova-compute')
-                        ['services'])
+        services = self.client.list_services()
+        params = {'xxx': 'nova-compute'}
+        services_xxx = self.client.list_services(params)
         self.assertEqual(len(services), len(services_xxx))
 
     @test.attr(type=['negative'])
@@ -50,8 +50,8 @@ class ServicesAdminNegativeTestJSON(base.BaseV2ComputeAdminTest):
     def test_get_service_by_invalid_service_and_valid_host(self):
         services = self.client.list_services()['services']
         host_name = services[0]['host']
-        services = self.client.list_services(host=host_name,
-                                             binary='xxx')['services']
+        params = {'host': host_name, 'binary': 'xxx'}
+        services = self.client.list_services(params)
         self.assertEqual(0, len(services))
 
     @test.attr(type=['negative'])
@@ -59,6 +59,6 @@ class ServicesAdminNegativeTestJSON(base.BaseV2ComputeAdminTest):
     def test_get_service_with_valid_service_and_invalid_host(self):
         services = self.client.list_services()['services']
         binary_name = services[0]['binary']
-        services = self.client.list_services(host='xxx',
-                                             binary=binary_name)['services']
+        params = {'host': 'xxx', 'binary': binary_name}
+        services = self.client.list_services(params)
         self.assertEqual(0, len(services))

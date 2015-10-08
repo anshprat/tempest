@@ -71,7 +71,7 @@ class TestObjectStorageTelemetry(manager.ObjectStorageScenarioTest):
             called again.
             """
             results = self.telemetry_client.list_samples(
-                'storage.objects.incoming.bytes')
+                'storage.api.request')
             LOG.debug('got samples %s', results)
 
             # Extract container info from samples.

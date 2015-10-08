@@ -47,10 +47,11 @@ working dir is the actually Tempest source repo, and there are a number of
 assumptions related to that. For this section we'll only cover the newer method
 as it is simpler, and quicker to work with.
 
-#. You first need to install Tempest this is done with pip, after you check out
-   the Tempest repo you simply run something like::
+The easiest way to create a configuration file is to copy the sample
+one in the ``etc/`` directory ::
 
-    $ pip install tempest
+    $> cd $TEMPEST_ROOT_DIR
+    $> cp etc/tempest.conf.sample etc/tempest.conf
 
    This can be done within a venv, but the assumption for this guide is that
    the Tempest cli entry point will be in your shell's PATH.
@@ -113,7 +114,7 @@ Unit Tests
 ----------
 
 Tempest also has a set of unit tests which test the Tempest code itself. These
-tests can be run by specifying the test discovery path::
+tests can be run by specifing the test discovery path::
 
     $> OS_TEST_PATH=./tempest/tests testr run --parallel
 

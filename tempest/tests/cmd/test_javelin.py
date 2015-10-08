@@ -279,8 +279,8 @@ class TestCreateResources(JavelinUnitTest):
 
         mocked_function = self.fake_client.secgroups.create_security_group
         mocked_function.assert_called_once_with(
-            name=self.fake_object['name'],
-            description=self.fake_object['description'])
+            self.fake_object['name'],
+            self.fake_object['description'])
 
 
 class TestDestroyResources(JavelinUnitTest):

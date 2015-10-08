@@ -10,7 +10,6 @@ Contents:
    overview
    HACKING
    REVIEWING
-   plugin
 
 ------------
 Field Guides
@@ -37,7 +36,6 @@ Tempest Configuration Guide
    :maxdepth: 2
 
    configuration
-   sampleconf
 
 ---------------------
 Command Documentation
